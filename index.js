@@ -42,9 +42,13 @@ async function sign(hash) {
     algorithm
   )
 
-  const jws = await new jose.CompactSign(new TextEncoder().encode(hash))
-    .setProtectedHeader({ alg: 'PS256', b64: false, crit: ['b64'] })
-    .sign(rsaPrivateKey)
+  try {
+    const jws = await new jose.CompactSign(new TextEncoder().encode(hash))
+            .setProtectedHeader({alg: 'PS256', b64: false, crit: ['b64']})
+            .sign(rsaPrivateKey)
+  } catch (error) {
+    console.log(error)
+  }
 
   return jws
 }
