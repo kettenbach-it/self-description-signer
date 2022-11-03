@@ -116,7 +116,7 @@ async function verify(jwt) {
         content: new TextDecoder().decode(result.payload),
       }
     } catch (error) {
-      console.log("PS256 verification failed: " + error)
+      console.error("PS256 verification failed: " + error)
     }
 
   }
@@ -135,7 +135,7 @@ async function verify(jwt) {
         content: payload
       }
     } catch (error) {
-      console.log("ES256 verification failed: " + error)
+      console.error("ES256 verification failed: " + error)
     }
   }
   return {}
