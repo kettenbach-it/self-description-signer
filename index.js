@@ -36,53 +36,109 @@ function sha256(input) {
 }
 
 async function sign(hash) {
-  const algorithm = 'PS256'
-  const rsaPrivateKey = await jose.importPKCS8(
+
+  /*
+  Key type: Public / Private key pairs (RSA, EC, OKP)
+    Algorithms:
+      RSA signature with PKCS #1 and SHA-2: RS256, RS384, RS512
+      RSA PSS signature with SHA-2: PS256, PS384, PS512
+      ECDSA signature with SHA-2: ES256, ES256K, ES384, ES512
+      Edwards-curve DSA: EdDSA
+   */
+  console.log("Signing privateKey")
+
+    // JSON Web Key (JWK ). “RSA”, “EC”, “OKP”, and “oct” key types are supported.
+  const privateKey = await jose.importPKCS8(
     process.env.PRIVATE_KEY,
-    algorithm
+    process.env.SIGNATURE_ALGORITHM
   )
 
-  try {
-    const jws = await new jose.CompactSign(new TextEncoder().encode(hash))
-            .setProtectedHeader({alg: 'PS256', b64: false, crit: ['b64']})
-            .sign(rsaPrivateKey)
-  } catch (error) {
-    console.log(error)
-  }
+  if (process.env.SIGNATURE_ALGORITHM === "PS256") {
+    console.log("Using PS256")
+    try {
+      // This supports RSA keys only
+      const jws = await new jose.CompactSign(new TextEncoder().encode(hash))
+          .setProtectedHeader({alg: 'PS256', b64: false, crit: ['b64']})
+          .sign(privateKey)
+      console.log("Finished signing")
+      return jws
+    } catch (error) {
+      console.log(error)
+    }
 
-  return jws
+  }
+  else if (process.env.SIGNATURE_ALGORITHM === "ES256") {
+    console.log("Using ES256")
+    try {
+      const jws = await new jose.SignJWT({ 'urn:example:claim': true })
+          .setProtectedHeader({ alg: 'ES256' })
+          .sign(privateKey)
+      console.log("Finished signing")
+      return jws
+    } catch (error) {
+      console.log(error)
+    }
+  }
+  else {
+    message = "Unsupported SIGNATURE_ALGORITHM" + process.env.SIGNATURE_ALGORITHM + ". Exiting!"
+    console.log(message)
+    throw new Error(message)
+  }
 }
 
 async function createProof(hash) {
+  console.log("Creating proof")
   const proof = {
     type: 'JsonWebSignature2020',
     created: new Date(CURRENT_TIME).toISOString(),
     proofPurpose: 'assertionMethod',
     verificationMethod:
       process.env.VERIFICATION_METHOD ?? 'did:web:compliance.lab.gaia-x.eu',
-    jws: await sign(hash),
+    jws: await sign(hash)
   }
-
+  console.log("Finished proof")
   return proof
 }
 
-async function verify(jws) {
-  const algorithm = 'PS256'
+async function verify(jwt) {
+  const algorithm = process.env.SIGNATURE_ALGORITHM
   const x509 = await jose.importX509(process.env.CERTIFICATE, algorithm)
   const publicKeyJwk = await jose.exportJWK(x509)
+  const pubkey = await jose.importJWK(publicKeyJwk, process.env.SIGNATURE_ALGORITHM)
 
-  const pubkey = await jose.importJWK(publicKeyJwk, 'PS256')
-
-  try {
-    const result = await jose.compactVerify(jws, pubkey)
-
-    return {
-      protectedHeader: result.protectedHeader,
-      content: new TextDecoder().decode(result.payload),
+  if (process.env.SIGNATURE_ALGORITHM === "PS256") {
+    jws = jwt.jws.replace('..', `.${hash}.`)
+    console.log("Using PS256")
+    try {
+      const result = await jose.compactVerify(jws, pubkey)
+      return {
+        protectedHeader: result.protectedHeader,
+        content: new TextDecoder().decode(result.payload),
+      }
+    } catch (error) {
+      console.log("PS256 verification failed: " + error)
     }
-  } catch (error) {
-    return {}
+
   }
+  else if (process.env.SIGNATURE_ALGORITHM === "ES256") {
+    console.log("Using ES256")
+    console.log(jwt)
+    try {
+
+      const { payload, protectedHeader } = await jose.jwtVerify(jwt.jws, pubkey)
+
+      console.log(payload)
+      console.log(protectedHeader)
+      return {
+        protectedHeader: protectedHeader,
+        payload: payload,
+        content: payload
+      }
+    } catch (error) {
+      console.log("ES256 verification failed: " + error)
+    }
+  }
+  return {}
 }
 
 async function createSignedSdFile(selfDescription, proof) {
@@ -177,9 +233,8 @@ async function main() {
         : '❌ SD signing failed (local)'
     )
 
-    const verificationResult = await verify(
-      proof.jws.replace('..', `.${hash}.`)
-    )
+    const verificationResult = await verify(proof)
+    console.log(verificationResult)
     logger(
       verificationResult?.content === hash
         ? '✅ Verification successful (local)'

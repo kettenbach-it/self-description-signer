@@ -10,3 +10,4 @@ config/self-description-ignore
 config/example.env
 output/old
 old.json
+.idea
